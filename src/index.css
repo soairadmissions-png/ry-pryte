@@ -1,0 +1,122 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@200;300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-serif: "Cormorant Garamond", ui-serif, Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-brand-rust: #d16126;
+  --color-brand-brown: #6e411b;
+  --color-brand-dark: #201a16;
+  --color-brand-gold: #d16126;
+}
+
+/* Custom fade scrollbar styling for deluxe look */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: #faf8f5;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1cbc2;
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #d16126;
+}
+
+/* High-end subtle animations */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 2.5s infinite linear;
+}
+
+.animate-spin-slow {
+  animation: spin 50s infinite linear;
+}
+
+.animate-reverse-spin {
+  animation: reverse-spin 80s infinite linear;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes reverse-spin {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #faf8f5;
+  color: #1e1a16;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: 0.015em;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.01em;
+}
+
+/* Editorial typography smooth letter-spacing expansion on hover */
+.editorial-kerning-expand {
+  transition: letter-spacing 0.8s cubic-bezier(0.16, 1, 0.3, 1), color 0.5s ease, border-color 0.5s ease;
+  will-change: letter-spacing;
+}
+
+.editorial-kerning-expand:hover,
+.group:hover .editorial-kerning-expand {
+  letter-spacing: 0.08em !important;
+}
+
+.editorial-kerning-expand-lg {
+  transition: letter-spacing 0.9s cubic-bezier(0.16, 1, 0.3, 1), color 0.5s ease, border-color 0.5s ease;
+  will-change: letter-spacing;
+}
+
+.editorial-kerning-expand-lg:hover,
+.group:hover .editorial-kerning-expand-lg {
+  letter-spacing: 0.05em !important;
+}
+
+.editorial-kerning-expand-sm {
+  transition: letter-spacing 0.7s cubic-bezier(0.16, 1, 0.3, 1), color 0.5s ease, border-color 0.5s ease;
+  will-change: letter-spacing;
+}
+
+.editorial-kerning-expand-sm:hover,
+.group:hover .editorial-kerning-expand-sm {
+  letter-spacing: 0.18em !important;
+}
+
+

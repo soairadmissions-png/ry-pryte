@@ -167,8 +167,8 @@ export default function ServicesSection({ onPlanClick }: ServicesSectionProps) {
                       });
                     }
                   }}
-                  src={resolveVideoUrl(videoUrl)}
-                  poster={imageUrl}
+                  src={resolveVideoUrl(videoUrl) || undefined}
+                  poster={imageUrl || undefined}
                   autoPlay
                   loop
                   muted={isMuted}
@@ -190,7 +190,7 @@ export default function ServicesSection({ onPlanClick }: ServicesSectionProps) {
                 />
               ) : imageUrl ? (
                 <img
-                  src={imageUrl}
+                  src={imageUrl || undefined}
                   alt={currentCategory.title}
                   referrerPolicy="no-referrer"
                   className="w-full h-full object-cover pointer-events-none filter brightness-[0.55] saturate-[0.9]"

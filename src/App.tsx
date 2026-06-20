@@ -282,6 +282,12 @@ function AppContent() {
             <p className="text-[10px] font-mono text-neutral-500 uppercase tracking-widest leading-relaxed pt-2">
               © 2026 KBJ EVENTS PLANNING & COORDINATION LTD. <br />
               CERTIFIED EVENT PROFESSIONALS. ALL RIGHTS RESERVED.
+              <span 
+                className="cursor-pointer hover:text-brand-gold ml-2 text-neutral-400 font-bold tracking-widest transition-all duration-300 select-all"
+                onClick={() => setIsCmsOpen(true)}
+              >
+                [STUDIO PORTAL]
+              </span>
             </p>
           </div>
 

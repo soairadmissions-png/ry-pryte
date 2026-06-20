@@ -180,7 +180,7 @@ export default function Testimonials() {
                 }}
               />
               <img
-                src={story.image}
+                src={story.image || undefined}
                 alt={story.author}
                 className="w-full h-full object-cover select-none"
                 referrerPolicy="no-referrer"
@@ -251,7 +251,7 @@ export default function Testimonials() {
                   style={{ borderColor: currentAccentColor }}
                 >
                   <img 
-                    src={activeStory.image} 
+                    src={activeStory.image || undefined} 
                     alt={activeStory.author} 
                     className="w-full h-full object-cover rounded-full"
                     referrerPolicy="no-referrer"

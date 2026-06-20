@@ -557,6 +557,29 @@ function KineticArcCard({
   const isHovered = hoveredIdx === idx;
   const isAnyHovered = hoveredIdx !== null;
 
+  const [isInView, setIsInView] = useState(false);
+  const cardRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '250px' }
+    );
+
+    if (cardRef.current) {
+      observer.observe(cardRef.current);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   const halfWidth = containerWidth / 2 || 600;
   const u = Math.max(-1.0, Math.min(1.0, relativeX / halfWidth));
 
@@ -591,6 +614,7 @@ function KineticArcCard({
 
   return (
     <motion.div
+      ref={cardRef}
       id={`kinetic-moment-${card.id}`}
       className="absolute top-1/2 left-1/2 rounded-[20px] overflow-hidden cursor-pointer shadow-lg border border-[#1e1a16]/10 bg-[#12100e] select-none"
       style={{
@@ -619,7 +643,7 @@ function KineticArcCard({
       {/* 0. STILL COVER SAFETY IMAGE BEHIND VIDEO */}
       {card.image && (
         <img
-          src={card.image}
+          src={card.image || undefined}
           alt={card.title}
           referrerPolicy="no-referrer"
           className="absolute inset-0 w-full h-full object-cover transition-all duration-500 ease-out select-none pointer-events-none bg-[#12100e]"
@@ -631,32 +655,34 @@ function KineticArcCard({
       )}
 
       {/* 1. CINEMATIC DIRECT VIDEO STREAM ALWAYS ON CONVEYOR BELT */}
-      <video
-        key={`${card.originalAssetId}-${card.absoluteSlotIndex}-${resolveVideoUrl(card.videoUrl)}`}
-        src={resolveVideoUrl(card.videoUrl) || undefined}
-        autoPlay
-        muted
-        loop
-        playsInline
-        preload="auto"
-        crossOrigin="anonymous"
-        onError={(e) => {
-          const v = e.currentTarget;
-          console.error("!!! CONVEYOR BELT VIDEO LOAD ERROR !!!", {
-            cardId: card.originalAssetId,
-            src: v.src,
-            code: v.error?.code,
-            message: v.error?.message,
-            networkState: v.networkState,
-            readyState: v.readyState
-          });
-        }}
-        className="absolute inset-0 w-full h-full object-cover transition-all duration-500 ease-out pointer-events-none select-none bg-black"
-        style={{
-          transform: `scale(${isHovered ? 1.12 : 1.05})`,
-          filter: brightnessFilter,
-        }}
-      />
+      {isInView && (
+        <video
+          key={`${card.originalAssetId}-${card.absoluteSlotIndex}-${resolveVideoUrl(card.videoUrl)}`}
+          src={resolveVideoUrl(card.videoUrl) || undefined}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="auto"
+          crossOrigin="anonymous"
+          onError={(e) => {
+            const v = e.currentTarget;
+            console.error("!!! CONVEYOR BELT VIDEO LOAD ERROR !!!", {
+              cardId: card.originalAssetId,
+              src: v.src,
+              code: v.error?.code,
+              message: v.error?.message,
+              networkState: v.networkState,
+              readyState: v.readyState
+            });
+          }}
+          className="absolute inset-0 w-full h-full object-cover transition-all duration-500 ease-out pointer-events-none select-none bg-black"
+          style={{
+            transform: `scale(${isHovered ? 1.12 : 1.05})`,
+            filter: brightnessFilter,
+          }}
+        />
+      )}
 
       {/* Title strip at bottom on hover */}
       <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent p-4 flex flex-col justify-end h-1/2 pointer-events-none z-10 transition-opacity duration-300">

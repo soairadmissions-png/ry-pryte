@@ -44,7 +44,7 @@ export default function TeamSection() {
               {/* Profile Portrait card with elegant scaling */}
               <div className="relative aspect-[3/4.2] w-full overflow-hidden rounded-3xl border border-black/5 bg-[#fbfaf7] shadow-sm transition-all duration-700 group-hover:scale-[1.02] group-hover:shadow-md">
                 <img
-                  src={member.portrait || null}
+                  src={member.portrait || undefined}
                   alt={member.name}
                   className="w-full h-full object-cover grayscale transition-transform duration-[1.5s] group-hover:scale-105 group-hover:grayscale-0"
                   referrerPolicy="no-referrer"

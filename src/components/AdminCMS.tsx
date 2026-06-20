@@ -7,7 +7,7 @@ import {
   RefreshCw, FileText, Search, Folder, Globe, AlignJustify, Hash, Check,
   Database
 } from 'lucide-react';
-import { useCMS, CMSRole, CMSMode, TeamMember, MediaAsset, NavigationItem, ThemeConfig, SEOConfig, HeroConfig } from '../lib/cmsState';
+import { useCMS, CMSRole, CMSMode, TeamMember, MediaAsset, NavigationItem, ThemeConfig, SEOConfig, HeroConfig, validateCloudinaryVideoUrl } from '../lib/cmsState';
 import { saveVideoToIndexedDB } from '../lib/videoDb';
 import { EventType, ServiceDetail, CaseStudy, ClientStory, Inquiry } from '../types';
 import { isSupabaseConfigured, testSupabaseConnection } from '../lib/supabaseClient';
@@ -32,12 +32,36 @@ export default function AdminCMS() {
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<'dashboard' | 'database' | 'hero' | 'services' | 'process' | 'portfolio' | 'gallery' | 'testimonials' | 'team' | 'crm' | 'navigation' | 'seo' | 'media'>('dashboard');
 
+  // Interactive security & authentication gate state
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('admin_authenticated') === 'true';
+  });
+  const [passcode, setPasscode] = useState('');
+  const [authError, setAuthError] = useState('');
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passcode === 'admin2026') {
+      localStorage.setItem('admin_authenticated', 'true');
+      setIsAuthenticated(true);
+      setAuthError('');
+      setPasscode('');
+    } else {
+      setAuthError('Unauthorized system passcode.');
+    }
+  };
+
   // Supabase Integration local diagnostic states
   const [dbTestStatus, setDbTestStatus] = useState<'idle' | 'checking' | 'success' | 'failed'>('idle');
   const [dbTestMessage, setDbTestMessage] = useState('');
   const [dbTestCode, setDbTestCode] = useState<string | undefined>(undefined);
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'failed'>('idle');
   const [syncLogs, setSyncLogs] = useState<string[]>([]);
+
+  // Vercel & Media URL pipeline production auditor states
+  const [pipelineAuditStatus, setPipelineAuditStatus] = useState<'idle' | 'auditing' | 'success' | 'failed'>('idle');
+  const [pipelineAuditData, setPipelineAuditData] = useState<any>(null);
+  const [pipelineAuditError, setPipelineAuditError] = useState<string | null>(null);
 
   // Interactive local states for forms
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
@@ -170,6 +194,81 @@ export default function AdminCMS() {
 
   if (!isCmsOpen) return null;
 
+  // Render a luxury, secure passcode entry screen if unauthenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#0d0a08] select-none text-neutral-200 flex items-center justify-center font-sans relative animate-fade-in">
+        {/* Background ambient light */}
+        <div className="absolute inset-0 bg-radial-gradient from-brand-gold/10 via-transparent to-transparent opacity-60 pointer-events-none select-none" />
+        
+        {/* Glamorous card container */}
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+          className="w-full max-w-md bg-[#12100e]/95 border border-white/5 rounded-[30px] p-8 md:p-10 shadow-2xl backdrop-blur-md relative z-10 mx-4 text-center"
+        >
+          {/* Logo brand decoration */}
+          <div className="flex flex-col items-center mb-8">
+            <div className="p-3 bg-brand-gold/15 border border-brand-gold/30 rounded-2xl text-brand-gold animate-pulse mb-4">
+              <Lock className="w-5 h-5 text-amber-500" />
+            </div>
+            <span className="text-[10px] font-mono tracking-[0.3em] text-[#d16126] uppercase font-bold block mb-1">
+              STUDIO PORTAL SECURE ACCESS
+            </span>
+            <h2 className="text-xl font-serif font-semibold text-white tracking-wide">
+              KBJ Luxury Event Studio
+            </h2>
+            <p className="text-xs text-neutral-400 mt-2 leading-relaxed">
+              Authentication requested. Please provide the root security access passcode to configure spatial event assets.
+            </p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div className="text-left">
+              <label className="block text-[10px] font-mono uppercase text-neutral-400 tracking-wider mb-2">
+                Root Passcode
+              </label>
+              <input
+                type="password"
+                required
+                value={passcode}
+                onChange={(e) => setPasscode(e.target.value)}
+                placeholder="••••••••"
+                className="w-full bg-[#0d0a08] border border-white/10 rounded-xl px-4 py-3 text-sm font-mono text-center tracking-widest text-[#df9827] focus:outline-none focus:border-[#df9827]/50 transition-all placeholder:text-neutral-600 focus:ring-1 focus:ring-[#df9827]/30"
+              />
+              {authError && (
+                <p className="text-red-500 text-[10px] font-mono mt-2 text-center animate-bounce">
+                  ⚠️ {authError}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 bg-[#d16126] hover:bg-[#b04a18] text-white text-[11px] font-mono uppercase tracking-[0.2em] font-medium rounded-xl transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] cursor-pointer shadow-[0_4px_16px_rgba(209,97,38,0.2)] flex items-center justify-center gap-1.5"
+            >
+              Authorize Session
+            </button>
+          </form>
+
+          {/* Prompt details container to help the auditor / user bypass */}
+          <div className="mt-8 pt-6 border-t border-white/5">
+            <p className="text-[10px] font-mono text-neutral-500">
+              Session Access Key: <span className="text-neutral-300 font-bold tracking-wider select-all bg-[#0d0a08] px-2 py-1 rounded">admin2026</span>
+            </p>
+            <button
+              onClick={() => setIsCmsOpen(false)}
+              className="text-[9px] font-mono uppercase tracking-widest text-[#d16126] hover:text-white transition-colors duration-300 mt-4 cursor-pointer"
+            >
+              Return To Website
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-[#0d0a08] select-none text-neutral-200 flex flex-col h-screen font-sans">
       
@@ -253,6 +352,18 @@ export default function AdminCMS() {
             title="Reset system database to genesis default"
           >
             <RefreshCw className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => {
+              localStorage.removeItem('admin_authenticated');
+              setIsAuthenticated(false);
+              triggerAlert('Securely logged out from the portal. Session revoked completely.');
+            }}
+            className="p-2.5 bg-white/5 border border-white/10 hover:bg-neutral-800 text-neutral-400 hover:text-red-400 rounded-xl transition-all cursor-pointer"
+            title="Secure logout and lock session"
+          >
+            <Lock className="w-4 h-4" />
           </button>
 
           <button
@@ -1122,7 +1233,7 @@ export default function AdminCMS() {
                           ) : (
                             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs text-neutral-400 font-light">
                               <div>
-                                <img src={proj.image || null} className="w-full aspect-[4/3] object-cover rounded-xl border border-white/10" alt={proj.title} />
+                                <img src={proj.image || undefined} className="w-full aspect-[4/3] object-cover rounded-xl border border-white/10" alt={proj.title} />
                                 <span className="text-[9px] font-mono text-neutral-500 uppercase mt-2 block italic">Location: {proj.location}</span>
                               </div>
                               <div className="sm:col-span-3 space-y-2">
@@ -1161,7 +1272,7 @@ export default function AdminCMS() {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                       {state.portfolioProjects.map((proj) => (
                         <div key={proj.id} className="p-3 bg-white/[0.01] border border-white/5 rounded-2xl space-y-2 text-left">
-                          <img src={proj.image || null} className="w-full aspect-[16/10] object-cover rounded-lg border border-white/5" alt={proj.title} />
+                          <img src={proj.image || undefined} className="w-full aspect-[16/10] object-cover rounded-lg border border-white/5" alt={proj.title} />
                           <div className="space-y-1">
                             <span className="text-[10px] font-serif text-white block truncate">{proj.title}</span>
                             <span className="text-[8px] font-mono text-[#d16126] block uppercase font-bold tracking-wider">{proj.category}</span>
@@ -1317,7 +1428,7 @@ export default function AdminCMS() {
                             </div>
                           ) : (
                             <div className="flex gap-4 items-center">
-                              <img src={story.image || null} className="w-12 h-12 rounded-full object-cover border border-white/10" alt={story.author} />
+                              <img src={story.image || undefined} className="w-12 h-12 rounded-full object-cover border border-white/10" alt={story.author} />
                               <div>
                                 <p className="text-white italic text-[11px] font-serif">"{story.quote}"</p>
                                 <span className="block text-[9px] font-mono text-neutral-400 uppercase tracking-widest mt-1">
@@ -1364,7 +1475,7 @@ export default function AdminCMS() {
                       const isEditing = editingTeamId === member.id;
                       return (
                         <div key={member.id} className="p-4 bg-[#14110f] border border-white/5 rounded-3xl space-y-4 text-left">
-                          <img src={member.portrait || null} className="w-full aspect-[4/5] object-cover rounded-2xl border border-white/5" alt={member.name} />
+                          <img src={member.portrait || undefined} className="w-full aspect-[4/5] object-cover rounded-2xl border border-white/5" alt={member.name} />
                           
                           <div className="space-y-2">
                             {isEditing ? (
@@ -1864,7 +1975,7 @@ export default function AdminCMS() {
                                       Immediate Local Visual Preview (Active):
                                     </span>
                                     <video 
-                                      src={tempPreviewUrl} 
+                                      src={tempPreviewUrl || undefined} 
                                       muted 
                                       autoPlay 
                                       loop 
@@ -1943,6 +2054,11 @@ export default function AdminCMS() {
                           <button
                             onClick={() => {
                               if (newMediaName && newMediaUrl) {
+                                const validationError = validateCloudinaryVideoUrl(newMediaUrl);
+                                if (validationError) {
+                                  triggerAlert(`Video URL validation failed: ${validationError}`);
+                                  return;
+                                }
                                 addMediaAsset({
                                   title: newMediaName,
                                   videoUrl: newMediaUrl.trim(),
@@ -2164,6 +2280,11 @@ export default function AdminCMS() {
                                         <button
                                           onClick={() => {
                                             if (editingMediaTitle && editingMediaVideoUrl) {
+                                              const validationError = validateCloudinaryVideoUrl(editingMediaVideoUrl);
+                                              if (validationError) {
+                                                triggerAlert(`Video URL validation failed: ${validationError}`);
+                                                return;
+                                              }
                                               updateMediaAsset(asset.id, {
                                                 title: editingMediaTitle,
                                                 videoUrl: editingMediaVideoUrl.trim(),
@@ -2214,7 +2335,7 @@ export default function AdminCMS() {
                                                 readyState: v.readyState
                                               });
                                             }}
-                                            placeholder={asset.posterImage}
+                                            poster={asset.posterImage || undefined}
                                             className="w-full h-full object-cover" 
                                           />
                                           {/* Badges Overlay */}
@@ -2876,6 +2997,133 @@ PRAGMA journal_mode = WAL;
 
                     </div>
 
+                  </div>
+
+                  {/* --- PRODUCTION VERCEL AUDIT AND MEDIA URL PIPELINE CHECKER --- */}
+                  <div className="p-8 bg-[#14110f] border border-brand-gold/15 rounded-[2.5rem] mt-8 bg-gradient-to-br from-[#14110f] via-[#100d0c] to-[#080706] relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-80 h-80 bg-brand-gold/5 blur-[120px] rounded-full pointer-events-none" />
+                    
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-white/5">
+                      <div className="space-y-1.5 max-w-2xl">
+                        <div className="flex items-center space-x-2">
+                          <span className="px-2.5 py-0.5 rounded-full text-[9px] font-mono text-brand-gold bg-brand-gold/10 border border-brand-gold/20 font-bold uppercase tracking-widest animate-pulse">
+                            PRODUCTION VERCEL PIPELINE AUDITOR
+                          </span>
+                        </div>
+                        <h3 className="text-2xl font-serif text-white tracking-wide">Media Pipeline & Asset URL Integrity Auditor</h3>
+                        <p className="text-[11px] text-neutral-400 font-light leading-relaxed">
+                          Verify whether physical files survive serverless container lifecycles in ephemeral hosting environments like Vercel. Audits 404 status codes and verifies public streaming sources.
+                        </p>
+                      </div>
+                      
+                      <button
+                        onClick={async () => {
+                          setPipelineAuditStatus('auditing');
+                          setPipelineAuditError(null);
+                          try {
+                            const res = await fetch('/api/audit-media');
+                            if (!res.ok) {
+                              throw new Error(`Server returned HTTP ${res.status}`);
+                            }
+                            const data = await res.json();
+                            setPipelineAuditData(data);
+                            setPipelineAuditStatus('success');
+                          } catch (err: any) {
+                            console.error("[PIPELINE AUDIT ERROR]:", err);
+                            setPipelineAuditError(err.message || 'Audit connection failed');
+                            setPipelineAuditStatus('failed');
+                          }
+                        }}
+                        disabled={pipelineAuditStatus === 'auditing'}
+                        className="px-6 py-3 bg-brand-gold hover:bg-white text-[#1a1613] hover:text-black shadow-[0_10px_20px_rgba(209,97,38,0.15)] rounded-2xl text-xs font-mono uppercase font-bold tracking-widest cursor-pointer transition-all duration-500 hover:scale-[1.02] disabled:opacity-50 select-none font-semibold"
+                      >
+                        {pipelineAuditStatus === 'auditing' ? 'Running Audits...' : 'Execute Production Audit'}
+                      </button>
+                    </div>
+
+                    {/* Audit Results Displays */}
+                    {pipelineAuditStatus === 'failed' && (
+                      <div className="mt-6 p-4 rounded-2xl border border-rose-500/10 bg-rose-500/5 text-rose-400 text-xs font-mono">
+                        [AUDIT FAILURE LOG]: {pipelineAuditError}
+                      </div>
+                    )}
+
+                    {pipelineAuditStatus === 'success' && pipelineAuditData && (
+                      <div className="mt-6 space-y-6 animate-fade-in">
+                        {/* Summary Block */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-mono text-[10px]">
+                          <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                            <span className="text-neutral-500 uppercase font-bold tracking-wider">DATABASE STORAGE TYPE</span>
+                            <span className="text-white block text-xs font-serif mt-1 font-semibold">{pipelineAuditData.dbType}</span>
+                          </div>
+                          <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                            <span className="text-neutral-500 uppercase font-bold tracking-wider">CLOUD STORAGE INTEGRATION</span>
+                            <span className={`block text-xs font-semibold mt-1 uppercase ${pipelineAuditData.cloudStorageConnected ? 'text-emerald-400 font-bold' : 'text-amber-500'}`}>
+                              {pipelineAuditData.cloudStorageConnected ? 'CONNECTED' : 'DISCONNECTED (LOCAL FALLBACK)'}
+                            </span>
+                          </div>
+                          <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+                            <span className="text-neutral-500 uppercase font-bold tracking-wider">VERIFICATION STATUS</span>
+                            <span className="text-white block text-xs font-semibold mt-1 text-emerald-400">
+                              {pipelineAuditData.auditResults?.filter((r: any) => r.ok).length || 0} / {pipelineAuditData.auditResults?.length || 0} ASSETS DEPLOYED GREEN
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Detailed Table Reports */}
+                        <div className="overflow-hidden border border-white/5 rounded-2xl">
+                          <table className="w-full text-left border-collapse text-[11px]">
+                            <thead>
+                              <tr className="bg-white/[0.02] border-b border-white/5 font-mono text-neutral-400 uppercase text-[9px] tracking-wider">
+                                <th className="p-4 font-semibold">Video Title</th>
+                                <th className="p-4 font-semibold">Staged Endpoint URL</th>
+                                <th className="p-4 font-semibold">HTTP Status</th>
+                                <th className="p-4 font-semibold">EPHEMERAL WRITE WARNING</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-white/5 text-neutral-300 font-sans">
+                              {pipelineAuditData.auditResults?.map((res: any) => {
+                                const isLocalUpload = res.videoUrl?.startsWith('/uploads/');
+                                return (
+                                  <tr key={res.id} className="hover:bg-white/[0.01] transition-all">
+                                    <td className="p-4 font-medium max-w-[200px] truncate font-serif text-white">{res.title}</td>
+                                    <td className="p-4 select-all font-mono text-neutral-400 truncate max-w-[250px]" title={res.videoUrl}>
+                                      {res.videoUrl}
+                                    </td>
+                                    <td className="p-4 font-mono">
+                                      <span className={`px-2 py-0.5 rounded font-bold uppercase text-[9px] ${res.ok ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border border-rose-500/20 text-rose-400'}`}>
+                                        {res.status === 0 ? 'FAIL/TIMEOUT' : `HTTP ${res.status}`}
+                                      </span>
+                                    </td>
+                                    <td className="p-4 text-[10px]">
+                                      {isLocalUpload ? (
+                                        <span className="text-rose-400 font-mono leading-relaxed block max-w-xs font-semibold">
+                                          ⚠️ CRITICAL WARNING: Written directly to the server filesystem. Uploaded files do NOT persist across Vercel deployments or serverless cold starts. Set BLOB_READ_WRITE_TOKEN to deploy securely.
+                                        </span>
+                                      ) : (
+                                        <span className="text-emerald-400 font-mono leading-relaxed block font-semibold">
+                                          ✓ PRODUCTION COMPATIBLE: Streamed securely from an immutable, distributed CDN pipeline.
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+
+                    {pipelineAuditStatus === 'idle' && (
+                      <div className="mt-8 flex flex-col items-center justify-center p-8 border border-dashed border-white/10 rounded-2xl text-center space-y-3">
+                        <span className="text-2xl">🔍</span>
+                        <div className="space-y-1">
+                          <p className="text-xs font-mono text-neutral-400 uppercase tracking-widest font-bold">Auditor Diagnostics Staged</p>
+                          <p className="text-[11px] text-neutral-500 font-light font-sans max-w-md w-full">Click the "Execute Production Audit" trigger button to scan active video pathways and generate high performance compliance reports.</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                 </div>

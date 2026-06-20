@@ -14,10 +14,33 @@ interface ArchiveMediaCardProps {
 
 function ArchiveMediaCard({ asset, index, onClick, resolveVideoUrl }: ArchiveMediaCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [isInView, setIsInView] = useState(false);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
+
+  React.useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px' }
+    );
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   // We play natively using the autoPlay attribute, but let's make sure it is playing
   React.useEffect(() => {
+    if (!isInView) return;
     const video = videoRef.current;
     if (!video) return;
     
@@ -25,7 +48,7 @@ function ArchiveMediaCard({ asset, index, onClick, resolveVideoUrl }: ArchiveMed
     if (video.paused) {
       video.play().catch(() => {});
     }
-  }, []);
+  }, [isInView]);
 
   const resolvedUrl = resolveVideoUrl(asset.videoUrl);
 
@@ -37,6 +60,7 @@ function ArchiveMediaCard({ asset, index, onClick, resolveVideoUrl }: ArchiveMed
 
   return (
     <motion.div
+      ref={containerRef}
       layout
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -53,37 +77,25 @@ function ArchiveMediaCard({ asset, index, onClick, resolveVideoUrl }: ArchiveMed
 
       {/* Cinematic Cover / Video container */}
       <div className="absolute inset-0 w-full h-full bg-black">
-        <video
-          ref={videoRef}
-          src={resolvedUrl || undefined}
-          poster={asset.posterImage || undefined}
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
-          crossOrigin="anonymous"
-          className="w-full h-full object-cover opacity-90 transition-all duration-700 scale-100 group-hover:scale-105"
-        />
+        {isInView && (
+          <video
+            ref={videoRef}
+            src={resolvedUrl || undefined}
+            poster={asset.posterImage || undefined}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+            crossOrigin="anonymous"
+            className="w-full h-full object-cover opacity-90 transition-all duration-700 scale-100 group-hover:scale-105"
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent z-10" />
-      </div>
-
-      {/* Floating Category tag */}
-      <div className="absolute top-4 left-4 z-20 flex items-center space-x-2 text-[8px] font-mono uppercase tracking-widest text-[#1a1613] bg-[#ede9df]/95 border border-black/[0.05] backdrop-blur-sm px-2.5 py-1 rounded-full transition-all duration-500 group-hover:bg-brand-gold group-hover:text-black">
-        <span>{asset.category || 'Archive Reel'}</span>
-      </div>
-
-      {/* Live Looper Indicator */}
-      <div className="absolute top-4 right-4 z-20 flex items-center space-x-1.5 text-[8px] font-mono uppercase tracking-widest text-[#d16126] bg-[#fdfdfb]/95 border border-brand-gold/30 backdrop-blur-sm px-2.5 py-1 rounded-full pointer-events-none">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-        <span>CINEMATIC OUTTAKE</span>
       </div>
 
       {/* Info Overlay */}
       <div className="absolute inset-x-0 bottom-0 p-6 z-20 text-[#f5f2ed] space-y-1">
-        <span className="text-[9px] font-mono uppercase tracking-[0.25em] text-brand-gold block">
-          {asset.processStage ? `${asset.processStage} Phase` : 'RAW PLATFORM FOOTAGE'}
-        </span>
         <h3 className="text-lg font-serif tracking-tight leading-tight text-white group-hover:text-brand-gold transition-colors duration-500 line-clamp-2">
           {asset.title}
         </h3>
@@ -222,13 +234,13 @@ export default function PortfolioGrid() {
                 <div className="relative aspect-video lg:aspect-auto lg:h-[550px] bg-black flex items-center justify-center">
                   <video
                     key={resolveVideoUrl(selectedMedia.videoUrl)}
-                    src={resolveVideoUrl(selectedMedia.videoUrl)}
+                    src={resolveVideoUrl(selectedMedia.videoUrl) || undefined}
                     controls
                     autoPlay
                     playsInline
                     preload="auto"
                     crossOrigin="anonymous"
-                    poster={selectedMedia.posterImage}
+                    poster={selectedMedia.posterImage || undefined}
                     className="w-full h-full object-contain"
                   />
                 </div>

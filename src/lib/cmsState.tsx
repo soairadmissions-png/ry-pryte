@@ -3,6 +3,34 @@ import { EventType, EventCategory, ServiceDetail, ProcessStep, CaseStudy, Client
 import { getLiveVideoUrl } from './videoDb';
 import { isSupabaseConfigured } from './supabaseClient';
 
+export function validateCloudinaryVideoUrl(url: any): string | null {
+  if (url === undefined || url === null) {
+    return "URL is required";
+  }
+  if (typeof url !== 'string') {
+    return "URL must be a string";
+  }
+  const cleanUrl = url.trim();
+  if (cleanUrl.startsWith('blob:')) {
+    return "Blob URLs (temporary object URLs) are forbidden";
+  }
+  if (cleanUrl.startsWith('local-video:')) {
+    return "Local IndexedDB references are forbidden";
+  }
+  if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+    return "URL must start with http:// or https://";
+  }
+  const parsedUrl = cleanUrl.toLowerCase();
+  if (!parsedUrl.includes('cloudinary.com')) {
+    return "URL must contain a valid Cloudinary domain (e.g. res.cloudinary.com)";
+  }
+  const pathname = parsedUrl.split('?')[0];
+  if (!pathname.endsWith('.mp4') && !parsedUrl.includes('f_mp4') && !parsedUrl.includes('/video/upload/')) {
+    return "Video format must be a playable MP4 stream";
+  }
+  return null;
+}
+
 /**
  * Simulates a secure upload to S3 / Cloud Storage / CDN bucket.
  * Conducts validations to ensure only safe video files are processed.
@@ -806,7 +834,7 @@ const DEFAULT_MEDIA_ASSETS: MediaAsset[] = [
   {
     id: 'media-val-1',
     title: 'The Sovereign Wedding Gala',
-    videoUrl: 'https://player.vimeo.com/external/482276569.sd.mp4?s=d394b95880df967a552e1bc600bebc21c172a6b2&profile_id=165&oauth2_token_id=57447761',
+    videoUrl: 'https://res.cloudinary.com/demo/video/upload/dog.mp4',
     description: 'An extraordinary luxury wedding planned and executed with premium drapes, customized seating, and full timeline management.',
     category: 'weddings',
     featured: true,
@@ -820,7 +848,7 @@ const DEFAULT_MEDIA_ASSETS: MediaAsset[] = [
   {
     id: 'media-val-2',
     title: 'Precision Corporate Summit',
-    videoUrl: 'https://player.vimeo.com/external/371433846.sd.mp4?s=236da2f3c0543f33b00696afb8bc5e5ee6de2b78&profile_id=165&oauth2_token_id=57447761',
+    videoUrl: 'https://res.cloudinary.com/demo/video/upload/elephants.mp4',
     description: 'A high-stakes trade delegation summit coordinated at Transcorp Hilton, with complex technical projections and schedule scripts.',
     category: 'corporate',
     featured: true,
@@ -834,7 +862,7 @@ const DEFAULT_MEDIA_ASSETS: MediaAsset[] = [
   {
     id: 'media-val-3',
     title: 'Bespoke Milestone Anniversary',
-    videoUrl: 'https://player.vimeo.com/external/482276569.sd.mp4?s=d394b95880df967a552e1bc600bebc21c172a6b2&profile_id=165&oauth2_token_id=57447761',
+    videoUrl: 'https://res.cloudinary.com/demo/video/upload/sea_turtle.mp4',
     description: 'A deeply atmospheric private celebration curated in Maitama, utilizing warm spotlighting and beautifully synchronized menus.',
     category: 'birthdays',
     featured: true,
@@ -848,7 +876,7 @@ const DEFAULT_MEDIA_ASSETS: MediaAsset[] = [
   {
     id: 'media-val-4',
     title: 'Grand Charity Gala Dinner',
-    videoUrl: 'https://player.vimeo.com/external/517614687.sd.mp4?s=2d2ec3da6f43e0618ff07a8fc2728df41ef3f409&profile_id=165&oauth2_token_id=57447761',
+    videoUrl: 'https://res.cloudinary.com/demo/video/upload/v1537134375/docs/hotel_booking.mp4',
     description: 'An elite black-tie gala dinner with strict donor seating layouts, amber glowing chandeliers, and classical ensembles.',
     category: 'galas',
     featured: true,
@@ -862,7 +890,7 @@ const DEFAULT_MEDIA_ASSETS: MediaAsset[] = [
   {
     id: 'media-val-5',
     title: 'Exclusive Brand Showcase',
-    videoUrl: 'https://player.vimeo.com/external/482065306.sd.mp4?s=bf02543e33fc402a77c449c4fddcd25dfdb55f84&profile_id=165&oauth2_token_id=57447761',
+    videoUrl: 'https://res.cloudinary.com/demo/video/upload/c_scale,w_640/dog.mp4',
     description: 'A custom, tailored blueprint showcase matching designers, premium suppliers, and curated spatial diagrams.',
     category: 'custom',
     featured: true,
@@ -1021,43 +1049,30 @@ export const CMSProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return '';
     }
     let cleanUrl = url.trim();
-    if (cleanUrl.startsWith('blob:')) {
-      console.warn("Rejected video asset URL: Blob URLs (temporary object URLs) are forbidden in state: ", cleanUrl);
-      return '';
-    }
-    if (cleanUrl.startsWith('local-video:')) {
-      console.warn("Rejected video asset URL: Local IndexedDB references are forbidden: ", cleanUrl);
-      return '';
-    }
-    
+
     // Auto-rewrite localhost/loopback hosts to remote host origin if the current active hostname is not localhost
     if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
       if (cleanUrl.match(/^https?:\/\/localhost:\d+/i)) {
         const pathSuffix = cleanUrl.replace(/^https?:\/\/localhost:\d+/i, "");
-        const originalUrl = cleanUrl;
         cleanUrl = `${window.location.origin}${pathSuffix}`;
-        console.info("[VIDEO RESOLVER RECOVERY] Remapped localhost loopback resource URL: ", originalUrl, " -> ", cleanUrl);
       } else if (cleanUrl.match(/^https?:\/\/127.0.0.1:\d+/i)) {
         const pathSuffix = cleanUrl.replace(/^https?:\/\/127.0.0.1:\d+/i, "");
-        const originalUrl = cleanUrl;
         cleanUrl = `${window.location.origin}${pathSuffix}`;
-        console.info("[VIDEO RESOLVER RECOVERY] Remapped 127.0.0.1 loopback resource URL: ", originalUrl, " -> ", cleanUrl);
       }
     }
 
     // Normalize relative paths if they start with "/"
     if (cleanUrl.startsWith('/')) {
-      const absoluteUrl = `${window.location.origin}${cleanUrl}`;
-      console.log("Normalized relative video URL to absolute: ", cleanUrl, " -> ", absoluteUrl);
-      return absoluteUrl;
+      cleanUrl = `${window.location.origin}${cleanUrl}`;
     }
 
-    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
-      return cleanUrl;
+    const validationError = validateCloudinaryVideoUrl(cleanUrl);
+    if (validationError) {
+      console.warn(`[VIDEO RESOLVER RECOVERY] Rejected invalid video URL '${cleanUrl}': ${validationError}`);
+      return '';
     }
 
-    console.warn("Rejected video asset URL: Must start with http:// or https://: ", cleanUrl);
-    return '';
+    return cleanUrl;
   };
 
   // Load from Storage

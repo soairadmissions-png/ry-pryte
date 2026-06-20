@@ -1,8 +1,12 @@
+import "./src/init.js";
 import express from "express";
 import path from "path";
 import fs from "fs";
 import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
+import { put as vercelBlobPut } from "@vercel/blob";
+
+let cloudinary: any = null;
 
 async function startServer() {
   const app = express();
@@ -14,73 +18,164 @@ async function startServer() {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
-  // Initialize SQLite kbl.db Database
-  const dbPath = path.join(process.cwd(), "kbl.db");
-  console.info(`[LOCAL SQLITE] Initializing database at ${dbPath}`);
-  const db = new Database(dbPath);
+  // Resilient Database initialization
+  let db: any = null;
+  let useFallbackDb = false;
+  
+  // In-memory persistent state mock store for serverless compatibility
+  const memoryDbStore: Record<string, any[]> = {
+    cms_state: [],
+    inquiries: [],
+    media_assets: []
+  };
 
-  // Enable WAL mode for high performance concurrency handling
-  db.pragma('journal_mode = WAL');
+  try {
+    const dbPath = path.join(process.cwd(), "kbl.db");
+    console.info(`[LOCAL SQLITE] Initializing database at ${dbPath}`);
+    db = new Database(dbPath);
 
-  // Create tables if they do not exist
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS cms_state (
-      id TEXT PRIMARY KEY,
-      state_data TEXT,
-      updated_at TEXT
-    );
+    // Enable WAL mode for high performance concurrency handling
+    db.pragma('journal_mode = WAL');
 
-    CREATE TABLE IF NOT EXISTS inquiries (
-      id TEXT PRIMARY KEY,
-      event_type TEXT,
-      date TEXT,
-      guest_count INTEGER,
-      budget_range TEXT,
-      message TEXT,
-      full_name TEXT,
-      email TEXT,
-      phone TEXT,
-      status TEXT,
-      proposal_concept TEXT,
-      submitted_at TEXT
-    );
+    // Create tables if they do not exist
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS cms_state (
+        id TEXT PRIMARY KEY,
+        state_data TEXT,
+        updated_at TEXT
+      );
 
-    CREATE TABLE IF NOT EXISTS media_assets (
-      id TEXT PRIMARY KEY,
-      title TEXT,
-      category TEXT,
-      video_url TEXT,
-      poster_image TEXT,
-      featured INTEGER,
-      tags TEXT,
-      event_date TEXT,
-      status TEXT,
-      process_stage TEXT,
-      display_order INTEGER
-    );
-  `);
-  console.info("[LOCAL SQLITE] Tables verified/created successfully.");
+      CREATE TABLE IF NOT EXISTS inquiries (
+        id TEXT PRIMARY KEY,
+        event_type TEXT,
+        date TEXT,
+        guest_count TEXT,
+        budget_range TEXT,
+        message TEXT,
+        full_name TEXT,
+        email TEXT,
+        phone TEXT,
+        status TEXT,
+        proposal_concept TEXT,
+        submitted_at TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS media_assets (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        category TEXT,
+        video_url TEXT,
+        poster_image TEXT,
+        featured INTEGER,
+        tags TEXT,
+        event_date TEXT,
+        status TEXT,
+        process_stage TEXT,
+        display_order INTEGER
+      );
+    `);
+    console.info("[LOCAL SQLITE] Tables verified/created successfully.");
+  } catch (err) {
+    console.warn("[PRODUCTION RESILIENCE WARNING] SQLite failed to initialize. Falling back to in-memory state engine for Serverless Vercel compatibility:", err);
+    useFallbackDb = true;
+  }
+
+  // Configure Cloudinary if credentials are provided
+  if (process.env.CLOUDINARY_URL || (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)) {
+    console.info("[MEDIA PIPELINE] Configuring Cloudinary upload credentials...");
+    try {
+      const cloudinaryModule = await import("cloudinary");
+      cloudinary = cloudinaryModule.v2;
+      cloudinary.config({
+        cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+        api_key: process.env.CLOUDINARY_API_KEY,
+        api_secret: process.env.CLOUDINARY_API_SECRET,
+        secure: true
+      });
+    } catch (err) {
+      console.error("[MEDIA PIPELINE ERROR] Failed to dynamically load or initialize Cloudinary:", err);
+    }
+  }
+
+  interface CloudinaryUploadResult {
+    secure_url: string;
+    public_id: string;
+  }
+
+  // Production-compatible Cloud Security Cloudinary Media Pipeline ONLY
+  async function uploadMedia(buffer: Buffer, filename: string, contentType: string): Promise<CloudinaryUploadResult> {
+    console.info(`[MEDIA PIPELINE] Activating Cloudinary-only upload flow for: ${filename}`);
+
+    if (!cloudinary) {
+      const errorMsg = "Cloudinary of v2 SDK library is not loaded/configured correctly. Check environment credentials (CLOUDINARY_URL or cloud_name/api_key/api_secret).";
+      console.error(`[MEDIA PIPELINE ERROR] ${errorMsg}`);
+      throw new Error(errorMsg);
+    }
+
+    try {
+      let cleanBase = path.parse(filename).name
+        .replace(/[^a-zA-Z0-9_\-]/g, "_")
+        .replace(/__+/g, "_")
+        .replace(/^_+|_+$/g, "");
+      
+      if (!cleanBase) {
+        cleanBase = "video";
+      }
+
+      const safePublicId = `${cleanBase}_${Date.now()}`;
+      console.info(`[MEDIA PIPELINE] Initiating stream-based Cloudinary uploading for '${filename}' with safe public_id: '${safePublicId}' and folder: 'event-media'...`);
+      
+      const result = await new Promise<any>((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+          {
+            resource_type: "video",
+            public_id: safePublicId,
+            folder: "event-media"
+          },
+          (error: any, result: any) => {
+            if (error) {
+              console.error(`[MEDIA PIPELINE] Cloudinary stream upload error:`, error);
+              reject(error);
+            } else {
+              resolve(result);
+            }
+          }
+        );
+        uploadStream.end(buffer);
+      });
+
+      console.info(`[MEDIA PIPELINE SUCCESS] Cloudinary response received:`, JSON.stringify(result, null, 2));
+      console.info(`[MEDIA PIPELINE LOG] secure_url generated: ${result.secure_url}`);
+      return {
+        secure_url: result.secure_url,
+        public_id: result.public_id
+      };
+    } catch (err: any) {
+      console.error(`[MEDIA PIPELINE ERROR] Direct Cloudinary uploading failed:`, err);
+      throw err;
+    }
+  }
+
+  // --- API ENDPOINTS ---
 
   // Raw body parser for binary file uploads - supports all incoming types up to 10GB (10240mb)
   app.post(
     "/api/upload",
     express.raw({ type: "*/*", limit: "10240mb" }),
-    (req, res) => {
+    async (req, res) => {
       try {
         const contentType = req.headers["content-type"] || "video/mp4";
         const xFileName = (req.headers["x-file-name"] as string) || "video.mp4";
-        const ext = path.extname(xFileName) || ".mp4";
-        const filename = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}${ext}`;
-        const filePath = path.join(uploadsDir, filename);
-
-        // Save raw video payload buffer to static assets directory
-        fs.writeFileSync(filePath, req.body);
-
-        // Construct absolute-relative URL for flexible deployment environment routing
-        const videoUrl = `/uploads/${filename}`;
-
-        console.log(`[PERSISTENCE API] Success. Saved to: ${filePath}. Host URL: ${videoUrl}, size: ${req.body.length || 0} bytes`);
-        res.json({ videoUrl });
+        
+        // Upload via Cloudinary ONLY
+        const uploadResult = await uploadMedia(req.body, xFileName, contentType);
+        
+        console.log(`[PERSISTENCE API] CMS save confirmation: Uploaded successfully. Generated secure_url: ${uploadResult.secure_url}`);
+        res.json({
+          videoUrl: uploadResult.secure_url,
+          secure_url: uploadResult.secure_url,
+          public_id: uploadResult.public_id
+        });
       } catch (err: any) {
         console.error("[PERSISTENCE API ERROR]:", err);
         res.status(500).json({ error: err.message || "Failed to upload video" });
@@ -129,13 +224,13 @@ async function startServer() {
           }
         }
 
-        // If all chunks are successfully collected on disk, assemble them into the final file path
+        // If all chunks are successfully collected on disk, assemble and upload them to the cloud pipeline
         if (allUploaded) {
           const ext = path.extname(xFileName) || ".mp4";
-          const finalFilename = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}${ext}`;
-          const finalPath = path.join(uploadsDir, finalFilename);
+          const tempFilename = `temp-assembled-${Date.now()}${ext}`;
+          const finalPath = path.join(uploadsDir, tempFilename);
 
-          console.info(`[CHUNKED UPLOAD] Assembly initiated for ${chunkTotal} chunks. Staging final video file: "${finalPath}"`);
+          console.info(`[CHUNKED UPLOAD] Assembly initiated for ${chunkTotal} chunks. Staging assembled file: "${finalPath}"`);
 
           const writeStream = fs.createWriteStream(finalPath);
           for (let i = 0; i < chunkTotal; i++) {
@@ -155,19 +250,28 @@ async function startServer() {
             });
           });
 
-          // Perform garbage collection to remove temporary chunk files
+          // Read the assembled file as a buffer
+          const assembledBuffer = fs.readFileSync(finalPath);
+
+          // Upload buffer via Cloudinary ONLY
+          const uploadResult = await uploadMedia(assembledBuffer, xFileName, "video/mp4");
+
+          // Perform garbage collection to remove temporary chunk files and assembled temp file
           try {
             fs.rmSync(tempChunkDir, { recursive: true, force: true });
-            console.info(`[CHUNKED UPLOAD] Garbage collection deleted session workspace: "${tempChunkDir}"`);
+            fs.unlinkSync(finalPath);
+            console.info(`[CHUNKED UPLOAD] Garbage collection deleted temporary files.`);
           } catch (cleanupErr) {
-            console.warn(`[CHUNKED UPLOAD WARNING] Failed to clean up temp session chunks:`, cleanupErr);
+            console.warn(`[CHUNKED UPLOAD WARNING] Failed to clean up temp session files:`, cleanupErr);
           }
 
-          // Build permanent file URL mapping with absolute-relative path
-          const videoUrl = `/uploads/${finalFilename}`;
-
-          console.info(`[CHUNKED UPLOAD SUCCESS] Saved final size: ${fs.statSync(finalPath).size} bytes. Direct URL: ${videoUrl}`);
-          return res.json({ videoUrl, completed: true });
+          console.info(`[CHUNKED UPLOAD SUCCESS] Uploaded file via Cloudinary pipeline: secure_url: ${uploadResult.secure_url}`);
+          return res.json({
+            videoUrl: uploadResult.secure_url,
+            secure_url: uploadResult.secure_url,
+            public_id: uploadResult.public_id,
+            completed: true
+          });
         }
 
         return res.json({ completed: false, receivedChunk: chunkIndex });
@@ -296,12 +400,17 @@ async function startServer() {
     })
   );
 
-  // --- LOCAL SQLite API ENDPOINTS ---
+  // --- API ROUTING COMPATIBILITY FOR SQLite AND IN-MEMORY FALLBACK ---
 
   // 1. GET CMS State By ID ('draft' | 'published')
   app.get("/api/cms-state/:id", (req, res) => {
     try {
       const { id } = req.params;
+      if (useFallbackDb) {
+        const item = memoryDbStore.cms_state.find(x => x.id === id);
+        return res.json({ data: item ? JSON.parse(item.state_data) : null });
+      }
+
       const row = db.prepare("SELECT state_data FROM cms_state WHERE id = ?").get(id) as any;
       if (row && row.state_data) {
         return res.json({ data: JSON.parse(row.state_data) });
@@ -322,6 +431,18 @@ async function startServer() {
         return res.status(400).json({ error: "Missing state payload" });
       }
 
+      if (useFallbackDb) {
+        const index = memoryDbStore.cms_state.findIndex(x => x.id === id);
+        const payload = { id, state_data: JSON.stringify(state), updated_at: new Date().toISOString() };
+        if (index > -1) {
+          memoryDbStore.cms_state[index] = payload;
+        } else {
+          memoryDbStore.cms_state.push(payload);
+        }
+        console.log(`[IN-MEMORY CMS SAVE SUCCESS]: State "${id}" synchronized.`);
+        return res.json({ success: true });
+      }
+
       const stmt = db.prepare(`
         INSERT INTO cms_state (id, state_data, updated_at)
         VALUES (?, ?, ?)
@@ -340,6 +461,11 @@ async function startServer() {
   // 3. GET Inquiries
   app.get("/api/inquiries", (req, res) => {
     try {
+      if (useFallbackDb) {
+        const sorted = [...memoryDbStore.inquiries].sort((a, b) => b.submitted_at.localeCompare(a.submitted_at));
+        return res.json({ data: sorted });
+      }
+
       const rows = db.prepare("SELECT * FROM inquiries ORDER BY submitted_at DESC").all() as any[];
       const mapRows = rows.map(r => ({
         id: r.id,
@@ -352,7 +478,7 @@ async function startServer() {
         email: r.email,
         phone: r.phone,
         status: r.status,
-        proposalConcept: r.proposal_concept,
+        proposalConcept: r.proposal_concept ? JSON.parse(r.proposal_concept) : null,
         submittedAt: r.submitted_at
       }));
       res.json({ data: mapRows });
@@ -368,6 +494,31 @@ async function startServer() {
       const inquiry = req.body;
       if (!inquiry || !inquiry.id) {
         return res.status(400).json({ error: "Missing inquiry or ID payload" });
+      }
+
+      if (useFallbackDb) {
+        const index = memoryDbStore.inquiries.findIndex(x => x.id === inquiry.id);
+        const mapped = {
+          id: inquiry.id,
+          event_type: inquiry.eventType || null,
+          date: inquiry.date || null,
+          guest_count: inquiry.guestCount || null,
+          budget_range: inquiry.budgetRange || null,
+          message: inquiry.message || null,
+          full_name: inquiry.fullName || null,
+          email: inquiry.email || null,
+          phone: inquiry.phone || null,
+          status: inquiry.status || "New",
+          proposal_concept: inquiry.proposalConcept || null,
+          submitted_at: inquiry.submittedAt || new Date().toISOString()
+        };
+        if (index > -1) {
+          memoryDbStore.inquiries[index] = mapped;
+        } else {
+          memoryDbStore.inquiries.push(mapped);
+        }
+        console.log(`[IN-MEMORY INQUIRY SAVE SUCCESS]: Saved: ${inquiry.id}`);
+        return res.json({ success: true });
       }
 
       const stmt = db.prepare(`
@@ -397,7 +548,7 @@ async function startServer() {
         inquiry.email || null,
         inquiry.phone || null,
         inquiry.status || "New",
-        inquiry.proposalConcept || null,
+        inquiry.proposalConcept ? JSON.stringify(inquiry.proposalConcept) : null,
         inquiry.submittedAt || new Date().toISOString()
       );
 
@@ -412,6 +563,24 @@ async function startServer() {
   // 5. GET Media Assets
   app.get("/api/media-assets", (req, res) => {
     try {
+      if (useFallbackDb) {
+        const sorted = [...memoryDbStore.media_assets].sort((a,b) => a.display_order - b.display_order);
+        const mapped = sorted.map(r => ({
+          id: r.id,
+          title: r.title,
+          category: r.category,
+          videoUrl: r.video_url,
+          posterImage: r.poster_image,
+          featured: Boolean(r.featured),
+          tags: JSON.parse(r.tags || "[]"),
+          eventDate: r.event_date,
+          status: r.status,
+          processStage: r.process_stage,
+          displayOrder: r.display_order
+        }));
+        return res.json({ data: mapped });
+      }
+
       const rows = db.prepare("SELECT * FROM media_assets ORDER BY display_order ASC").all() as any[];
       const mapRows = rows.map(r => ({
         id: r.id,
@@ -439,6 +608,30 @@ async function startServer() {
       const asset = req.body;
       if (!asset || !asset.id) {
         return res.status(400).json({ error: "Missing asset or ID payload" });
+      }
+
+      if (useFallbackDb) {
+        const index = memoryDbStore.media_assets.findIndex(x => x.id === asset.id);
+        const mapped = {
+          id: asset.id,
+          title: asset.title || null,
+          category: asset.category || null,
+          video_url: asset.videoUrl || null,
+          poster_image: asset.posterImage || null,
+          featured: asset.featured ? 1 : 0,
+          tags: JSON.stringify(asset.tags || []),
+          event_date: asset.eventDate || null,
+          status: asset.status || "Active",
+          process_stage: asset.processStage || null,
+          display_order: asset.displayOrder || 0
+        };
+        if (index > -1) {
+          memoryDbStore.media_assets[index] = mapped;
+        } else {
+          memoryDbStore.media_assets.push(mapped);
+        }
+        console.log(`[IN-MEMORY MEDIA SAVE SUCCESS]: Saved asset: ${asset.id}`);
+        return res.json({ success: true });
       }
 
       const stmt = db.prepare(`
@@ -482,6 +675,16 @@ async function startServer() {
   app.delete("/api/media-assets/:id", (req, res) => {
     try {
       const { id } = req.params;
+      
+      if (useFallbackDb) {
+        const index = memoryDbStore.media_assets.findIndex(x => x.id === id);
+        if (index > -1) {
+          memoryDbStore.media_assets.splice(index, 1);
+        }
+        console.log(`[IN-MEMORY MEDIA DELETE SUCCESS]: Removed asset: ${id}`);
+        return res.json({ success: true });
+      }
+
       const stmt = db.prepare("DELETE FROM media_assets WHERE id = ?");
       stmt.run(id);
 
@@ -489,6 +692,109 @@ async function startServer() {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[LOCAL SQLite DELETE MEDIA ERROR]:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // 8. PRODUCTION AUDITOR: Verify all stored and default video URLs and status codes
+  app.get("/api/audit-media", async (req, res) => {
+    try {
+      let assets: any[] = [];
+      if (useFallbackDb) {
+        assets = memoryDbStore.media_assets.map(r => ({
+          id: r.id,
+          title: r.title,
+          videoUrl: r.video_url
+        }));
+      } else {
+        const rows = db.prepare("SELECT id, title, video_url FROM media_assets").all() as any[];
+        assets = rows.map(r => ({
+          id: r.id,
+          title: r.title,
+          videoUrl: r.video_url
+        }));
+      }
+
+      // Include default website portfolio assets to verify out-of-the-box system safety
+      const defaultUrls = [
+        { id: 'media-val-1', title: 'The Sovereign Wedding Gala', videoUrl: 'https://res.cloudinary.com/demo/video/upload/dog.mp4' },
+        { id: 'media-val-2', title: 'Precision Corporate Summit', videoUrl: 'https://res.cloudinary.com/demo/video/upload/elephants.mp4' },
+        { id: 'media-val-3', title: 'Bespoke Milestone Anniversary', videoUrl: 'https://res.cloudinary.com/demo/video/upload/sea_turtle.mp4' },
+        { id: 'media-val-4', title: 'Grand Charity Gala Dinner', videoUrl: 'https://res.cloudinary.com/demo/video/upload/v1537134375/docs/hotel_booking.mp4' },
+        { id: 'media-val-5', title: 'Exclusive Brand Showcase', videoUrl: 'https://res.cloudinary.com/demo/video/upload/c_scale,w_640/dog.mp4' }
+      ];
+
+      const allToVerify = [...assets];
+      defaultUrls.forEach(def => {
+        if (!allToVerify.some(a => a.videoUrl === def.videoUrl)) {
+          allToVerify.push(def);
+        }
+      });
+
+      const auditResults = await Promise.all(
+        allToVerify.map(async (asset) => {
+          let status = 0;
+          let ok = false;
+          let errorMessage = "";
+          const url = asset.videoUrl || "";
+
+          if (url.startsWith('/uploads/')) {
+            const filePath = path.join(process.cwd(), url);
+            if (fs.existsSync(filePath)) {
+              status = 200;
+              ok = true;
+            } else {
+              status = 404;
+              ok = false;
+              errorMessage = "File missing from uploads storage disk";
+            }
+          } else if (url.startsWith('http://') || url.startsWith('https://')) {
+            try {
+              // Perform lightweight HEAD request for high performance
+              const fetchRes = await fetch(url, { method: 'HEAD', signal: AbortSignal.timeout(5000) });
+              status = fetchRes.status;
+              ok = fetchRes.ok;
+            } catch (err: any) {
+              errorMessage = err.message || "HEAD request failed";
+              try {
+                // Retry with standard GET
+                const fetchRes = await fetch(url, { signal: AbortSignal.timeout(5000) });
+                status = fetchRes.status;
+                ok = fetchRes.ok;
+              } catch (retryErr: any) {
+                status = 0;
+                ok = false;
+                errorMessage = retryErr.message || "HEAD & GET connection timeouts";
+              }
+            }
+          } else if (url.startsWith('local-video://') || url.startsWith('blob:')) {
+            status = 200;
+            ok = true;
+            errorMessage = "Dynamic Client-side Offline Sandbox Reference";
+          } else {
+            status = 400;
+            ok = false;
+            errorMessage = "Unsupported or invalid media link identifier";
+          }
+
+          return {
+            id: asset.id,
+            title: asset.title,
+            videoUrl: url,
+            status,
+            ok,
+            error: errorMessage || null
+          };
+        })
+      );
+
+      res.json({
+        dbType: useFallbackDb ? "In-Memory Resilience Mode" : "Native SQLite Mode",
+        cloudStorageConnected: Boolean(process.env.CLOUDINARY_URL || (process.env.CLOUDINARY_CLOUD_NAME && process.env.CLOUDINARY_API_KEY && process.env.CLOUDINARY_API_SECRET)),
+        auditResults
+      });
+    } catch (err: any) {
+      console.error("[AUDIT API GENERAL ERROR]:", err);
       res.status(500).json({ error: err.message });
     }
   });
